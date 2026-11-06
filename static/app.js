@@ -148,7 +148,7 @@ function showResult(g, project) {
 
 async function loadProviders({q, names, grid, status, skipKeys = [], project = '', limit = 0}) {
   const groups = new Map(), errors = [];
-  let pending = names.length;
+  let pending = names.length, page = 1, hasNextPage = false;
   const render = () => {
     $$('[data-ext]', grid).forEach(n => n.remove());
     let list = [...groups.entries()].filter(([k]) => !skipKeys.includes(k)).map(([, g]) => g).sort((a, b) => b.providers.length - a.providers.length);
@@ -168,14 +168,17 @@ async function loadProviders({q, names, grid, status, skipKeys = [], project = '
   };
   const finish = () => status.innerHTML = errors.map(e => `<div class="text-warning small">${esc(e)}</div>`).join('') || (groups.size ? '' : '<span class="text-secondary small">No distributor results.</span>');
   status.innerHTML = '<span class="text-secondary small"><span class="spinner-border spinner-border-sm"></span> Searching distributors…</span>';
-  names.forEach(async n => {
+  const loadPage = () => { pending = names.length; names.forEach(async n => {
     try {
-      const r = await fetch(`/api/search/${n}?q=${encodeURIComponent(q)}`), d = await r.json();
+      const r = await fetch(`/api/search/${n}?q=${encodeURIComponent(q)}&page=${page}`), d = await r.json();
       if (!r.ok) throw new Error(d.error || r.status);
+      hasNextPage ||= d.has_next;
       d.results.forEach(x => mergeResult(groups, x, d)); render();
     } catch (e) { errors.push(e.message); }
-    if (--pending === 0) finish();
-  });
+    if (--pending === 0) { finish(); if (hasNextPage) $('#extNext').hidden = false; }
+  }); };
+  $('#extNext')?.addEventListener('click', () => { page += 1; $('#extNext').hidden = true; loadPage(); });
+  loadPage();
 }
 
 const ext = $('#ext');

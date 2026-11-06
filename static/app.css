@@ -11,6 +11,6 @@
 .file-icon{font-size:2.5rem}
 .pdf-frame{width:100%;height:100%;border:0;background:#fff}
 .tile{background:var(--bs-tertiary-bg);border-radius:var(--bs-border-radius);padding:.5rem .75rem}
-summary{list-style:none;cursor:pointer}summary::-webkit-details-marker{display:none}
+summary{list-style:none;cursor:pointer;display:flex;align-items:center;min-height:2rem}summary::-webkit-details-marker{display:none}
 details>summary::before{content:"\F285";font-family:bootstrap-icons;font-size:.7rem;margin-right:.3rem;display:inline-block;transition:transform .1s}
 details[open]>summary::before{transform:rotate(90deg)}

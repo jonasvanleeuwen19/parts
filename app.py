@@ -6,6 +6,7 @@ import secrets
 import time
 import uuid
 import zipfile
+from difflib import get_close_matches
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from io import BytesIO
@@ -15,7 +16,7 @@ from authlib.integrations.flask_client import OAuth
 from flask import (Flask, abort, flash, g, jsonify, make_response, redirect, render_template,
                    request, send_file, send_from_directory, session, url_for)
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import event, or_
+from sqlalchemy import event, or_, inspect, text
 from sqlalchemy.engine import Engine
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -199,8 +200,12 @@ class Project(db.Model):
     id = id_column()
     name = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text)
+    owner_id = fk("user", "SET NULL", index=True)
+    visibility = db.Column(db.String(20), default="private", nullable=False)
+    share_token = db.Column(db.String(32), unique=True, index=True)
     created = db.Column(db.DateTime, default=datetime.utcnow)
     items = db.relationship("Item", cascade="all, delete-orphan", backref="project")
+    owner = db.relationship("User")
 
     def cost(self):
         totals, missing = {}, 0
@@ -219,6 +224,45 @@ class Item(db.Model):
     qty = db.Column(db.Integer, default=1)
     notes = db.Column(db.String(500))
     part = db.relationship("Part")
+
+
+class ProjectShare(db.Model):
+    id = id_column()
+    project_id = fk("project", index=True)
+    user_id = fk("user", index=True)
+    role = db.Column(db.String(10), default="read", nullable=False)
+    __table_args__ = (db.UniqueConstraint("project_id", "user_id"),)
+
+
+class Library(db.Model):
+    id = id_column()
+    name = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text)
+    owner_id = fk("user", "SET NULL", index=True)
+    visibility = db.Column(db.String(20), default="private", nullable=False)
+    share_token = db.Column(db.String(32), unique=True, index=True)
+    created = db.Column(db.DateTime, default=datetime.utcnow)
+    owner = db.relationship("User")
+    items = db.relationship("LibraryPart", cascade="all, delete-orphan", backref="library")
+
+
+class LibraryPart(db.Model):
+    id = id_column()
+    library_id = fk("library")
+    part_id = fk("part")
+    category_id = fk("category", "SET NULL")
+    note = db.Column(db.Text)
+    part = db.relationship("Part")
+    category = db.relationship("Category")
+    __table_args__ = (db.UniqueConstraint("library_id", "part_id"),)
+
+
+class LibraryShare(db.Model):
+    id = id_column()
+    library_id = fk("library", index=True)
+    user_id = fk("user", index=True)
+    role = db.Column(db.String(10), default="read", nullable=False)
+    __table_args__ = (db.UniqueConstraint("library_id", "user_id"),)
 
 
 class Setting(db.Model):
@@ -254,6 +298,15 @@ SEED = {
 
 def init_db():
     db.create_all()
+    # create_all does not add columns to installations created by older versions.
+    columns = {c["name"] for c in inspect(db.engine).get_columns("project")}
+    with db.engine.begin() as connection:
+        if "owner_id" not in columns:
+            connection.execute(text("ALTER TABLE project ADD COLUMN owner_id VARCHAR(12) REFERENCES user(id)"))
+        if "visibility" not in columns:
+            connection.execute(text("ALTER TABLE project ADD COLUMN visibility VARCHAR(20) NOT NULL DEFAULT 'private'"))
+        if "share_token" not in columns:
+            connection.execute(text("ALTER TABLE project ADD COLUMN share_token VARCHAR(32)"))
     if not Category.query.first():
         for name, children in SEED.items():
             parent = Category(name=name)
@@ -330,6 +383,43 @@ def filesize(size):
     return f"{size / 1048576:.1f} MB" if size >= 1048576 else f"{max(1, round((size or 0) / 1024))} KB"
 
 
+def owned_projects():
+    if not g.get("user"):
+        return []
+    legacy = Project.owner_id.is_(None) if g.user.is_admin else Project.owner_id == "__none__"
+    return Project.query.filter(or_(Project.owner_id == g.user.id, legacy, Project.visibility == "public",
+                                    Project.id.in_(db.session.query(ProjectShare.project_id).filter_by(user_id=g.user.id)))).order_by(Project.name).all()
+
+
+def project_access(project, write=False):
+    if not g.user:
+        return False
+    if project.owner_id == g.user.id or (project.owner_id is None and g.user.is_admin):
+        return True
+    share = ProjectShare.query.filter_by(project_id=project.id, user_id=g.user.id).first()
+    if share and (not write or share.role == "write"):
+        return True
+    return project.visibility == "public" and not write
+
+
+def library_access(library, write=False):
+    if not g.user:
+        return False
+    if library.owner_id == g.user.id:
+        return True
+    share = LibraryShare.query.filter_by(library_id=library.id, user_id=g.user.id).first()
+    if share and (not write or share.role == "write"):
+        return True
+    return library.visibility == "public" and not write
+
+
+def accessible_libraries():
+    if not g.get("user"):
+        return []
+    return Library.query.filter(or_(Library.owner_id == g.user.id, Library.visibility == "public",
+                                    Library.id.in_(db.session.query(LibraryShare.library_id).filter_by(user_id=g.user.id)))).order_by(Library.name).all()
+
+
 @app.before_request
 def guard():
     session.setdefault("csrf", secrets.token_hex(16))
@@ -340,14 +430,16 @@ def guard():
     if request.path.startswith("/api/v1/"):
         return None
     g.user = db.session.get(User, session["uid"]) if "uid" in session else None
-    if g.user is None and request.endpoint not in ("health", "login", "callback", "static"):
+    if g.user is None and request.endpoint not in ("health", "login", "callback", "static", "public_project", "public_library"):
         session.pop("uid", None)
         return redirect(url_for("login"))
 
 
 @app.context_processor
 def inject():
-    return {"csrf": session.get("csrf"), "user": g.get("user"), "projects_all": Project.query.order_by(Project.name).all() if g.get("user") else []}
+    return {"csrf": session.get("csrf"), "user": g.get("user"), "projects_all": owned_projects(),
+            "libraries_all": accessible_libraries(),
+            "categories_all": Category.query.order_by(Category.name).all()}
 
 
 def admin_only():
@@ -425,9 +517,13 @@ def local_query(q="", category_id=None, manufacturer=None, tag=None):
 def parts():
     args = request.args
     q = args.get("q", "").strip()
-    query = local_query(q, args.get("cat"), args.get("mf"), args.get("tag"))
+    category_id = args.get("cat")
+    query = local_query(q, category_id, args.get("mf"), args.get("tag"))
     query = query.order_by(Part.name) if args.get("sort") == "name" else query.order_by(Part.updated.desc())
-    category = db.session.get(Category, args.get("cat")) if args.get("cat") else None
+    category = db.session.get(Category, category_id) if category_id else None
+    if category_id and category is None:
+        category_id = None
+        query = local_query(q, None, args.get("mf"), args.get("tag"))
     filtered = any(args.get(k) for k in ("cat", "mf", "tag"))
     return render_template(
         "parts.html", pagination=query.paginate(page=args.get("page", 1, type=int), per_page=24, error_out=False),
@@ -605,12 +701,12 @@ def file_delete(fid):
     return part_page(part_id, "files")
 
 
-def run_provider(name, q, fresh=False):
-    key = (name, q.lower())
+def run_provider(name, q, fresh=False, page=1):
+    key = (name, q.lower(), page)
     hit = cache.get(key)
     if hit and hit[0] > time.time() and not fresh:
         return hit[1], hit[2], True
-    results = providers.PROVIDERS[name]["search"](provider_config(name), q)
+    results = providers.PROVIDERS[name]["search"](provider_config(name), q, page)
     fetched = datetime.utcnow().isoformat(timespec="seconds") + "Z"
     if len(cache) > 500:
         cache.clear()
@@ -623,11 +719,20 @@ def api_search(name):
     if name not in enabled_providers():
         abort(404)
     try:
-        results, fetched, cached = run_provider(name, request.args.get("q", "").strip())
+        query = request.args.get("q", "").strip()
+        page = max(1, request.args.get("page", 1, type=int))
+        key = (name, query.lower(), page)
+        if not cache.get(key):
+            cached_queries = [k[1] for k in cache if len(k) == 3 and k[0] == name and k[2] == page]
+            close = get_close_matches(query.lower(), cached_queries, n=1, cutoff=0.78)
+            if close:
+                query = close[0]
+        results, fetched, cached = run_provider(name, query, page=page)
     except Exception as error:
         app.logger.warning("provider %s failed: %s", name, type(error).__name__)
         return jsonify(error=f"{providers.PROVIDERS[name]['label']}: {error}"), 502
-    return jsonify(results=results, fetched=fetched, cached=cached)
+    return jsonify(results=results, fetched=fetched, cached=cached, query=query, page=page,
+                   has_next=len(results) >= 20)
 
 
 @app.get("/api/suggest")
@@ -703,9 +808,15 @@ def part_refresh(pid):
         flash("No providers enabled.", "warning")
         return part_page(pid, "offers")
 
+    configs = {name: provider_config(name) for name in names}
+
     def fetch(name):
         try:
-            return name, run_provider(name, query, fresh=True)
+            key = (name, query.lower(), 1)
+            results = providers.PROVIDERS[name]["search"](configs[name], query)
+            fetched = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+            cache[key] = (time.time() + CACHE_TTL, results, fetched)
+            return name, (results, fetched, False)
         except Exception as error:
             return name, error
 
@@ -728,34 +839,75 @@ def part_refresh(pid):
 
 @app.get("/projects")
 def projects():
-    return render_template("projects.html", rows=Project.query.order_by(Project.created.desc()).all())
+    return render_template("projects.html", rows=owned_projects())
 
 
 @app.post("/projects/new")
 def project_new():
-    project = Project(name=request.form.get("name", "").strip() or "Untitled project", description=request.form.get("description", ""))
+    project = Project(name=request.form.get("name", "").strip() or "Untitled project",
+                      description=request.form.get("description", ""), owner_id=g.user.id,
+                      visibility=request.form.get("visibility", "private"),
+                      share_token=secrets.token_urlsafe(24) if request.form.get("visibility") == "public" else None)
     db.session.add(project)
     db.session.commit()
     return redirect(url_for("project", pid=project.id))
 
 
+@app.get("/projects/share/<token>")
+def public_project(token):
+    project = Project.query.filter_by(share_token=token, visibility="public").first_or_404()
+    return render_template("project.html", p=project, can_write=False, public_view=True)
+
+
+@app.post("/projects/<pid>/share")
+def project_share(pid):
+    project = db.get_or_404(Project, pid)
+    if project.owner_id != g.user.id:
+        abort(403)
+    email = request.form.get("email", "").strip().lower()
+    target = User.query.filter(db.func.lower(User.email) == email).first()
+    if not target:
+        flash("User not found.", "warning")
+    elif target.id == g.user.id:
+        flash("You already own this project.", "info")
+    else:
+        share = ProjectShare.query.filter_by(project_id=pid, user_id=target.id).first() or ProjectShare(project_id=pid, user_id=target.id)
+        share.role = request.form.get("role", "read")
+        db.session.add(share)
+        db.session.commit()
+        flash("Project shared.", "success")
+    return redirect(url_for("project", pid=pid))
+
+
 @app.get("/projects/<pid>")
 def project(pid):
-    return render_template("project.html", p=db.get_or_404(Project, pid))
+    project = db.get_or_404(Project, pid)
+    if not project_access(project):
+        abort(403)
+    return render_template("project.html", p=project, can_write=project_access(project, True))
 
 
 @app.post("/projects/<pid>/edit")
 def project_edit(pid):
     project = db.get_or_404(Project, pid)
+    if not project_access(project, True):
+        abort(403)
     project.name = request.form.get("name", "").strip() or project.name
     project.description = request.form.get("description", "")
+    project.visibility = request.form.get("visibility", project.visibility)
+    if project.visibility == "public" and not project.share_token:
+        project.share_token = secrets.token_urlsafe(24)
+    if project.visibility != "public":
+        project.share_token = None
     db.session.commit()
     return redirect(url_for("project", pid=pid))
 
 
 @app.post("/projects/<pid>/add")
 def project_add(pid):
-    db.get_or_404(Project, pid)
+    project = db.get_or_404(Project, pid)
+    if not project_access(project, True):
+        abort(403)
     part_id, name = request.form.get("part_id"), request.form.get("new_name", "").strip()
     if not part_id and name:
         created = Part(name=name)
@@ -774,6 +926,8 @@ def project_add(pid):
 @app.post("/items/<iid>")
 def item_update(iid):
     item = db.get_or_404(Item, iid)
+    if not project_access(item.project, True):
+        abort(403)
     if "delete" in request.form:
         db.session.delete(item)
     else:
@@ -785,9 +939,105 @@ def item_update(iid):
 
 @app.post("/projects/<pid>/delete")
 def project_delete(pid):
-    db.session.delete(db.get_or_404(Project, pid))
+    project = db.get_or_404(Project, pid)
+    if project.owner_id != g.user.id:
+        abort(403)
+    db.session.delete(project)
     db.session.commit()
     return redirect(url_for("projects"))
+
+
+@app.get("/libraries")
+def libraries():
+    rows = accessible_libraries()
+    return render_template("libraries.html", rows=rows)
+
+
+@app.post("/libraries/new")
+def library_new():
+    library = Library(name=request.form.get("name", "").strip() or "Untitled library",
+                      description=request.form.get("description", ""), owner_id=g.user.id,
+                      visibility=request.form.get("visibility", "private"),
+                      share_token=secrets.token_urlsafe(24) if request.form.get("visibility") == "public" else None)
+    db.session.add(library)
+    db.session.commit()
+    return redirect(url_for("library", lid=library.id))
+
+
+@app.get("/libraries/<lid>")
+def library(lid):
+    current = db.get_or_404(Library, lid)
+    if not library_access(current):
+        abort(403)
+    query = request.args.get("q", "").strip()
+    items = current.items
+    if query:
+        words = query.lower().split()
+        items = [item for item in items if all(any(word in (value or "").lower() for value in
+                                                   (item.part.name, item.part.mpn, item.part.manufacturer, item.note))
+                                               for word in words)]
+        corrected = None
+        if not items:
+            candidates = [item.part.name for item in current.items] + [item.part.mpn for item in current.items if item.part.mpn]
+            close = get_close_matches(query, candidates, n=1, cutoff=0.72)
+            if close:
+                corrected = close[0]
+                items = [item for item in current.items if close[0].lower() in
+                         (item.part.name or "").lower() or close[0].lower() in (item.part.mpn or "").lower()]
+    else:
+        corrected = None
+    return render_template("library.html", library=current, library_items=items, search_term=query,
+                           search_corrected=corrected, can_write=library_access(current, True))
+
+
+@app.get("/libraries/share/<token>")
+def public_library(token):
+    current = Library.query.filter_by(share_token=token, visibility="public").first_or_404()
+    return render_template("library.html", library=current, can_write=False, public_view=True)
+
+
+@app.post("/libraries/<lid>/add")
+def library_add(lid):
+    current = db.get_or_404(Library, lid)
+    if not library_access(current, True):
+        abort(403)
+    part = db.get_or_404(Part, request.form.get("part_id"))
+    item = LibraryPart.query.filter_by(library_id=lid, part_id=part.id).first()
+    if not item:
+        db.session.add(LibraryPart(library_id=lid, part_id=part.id, category_id=request.form.get("category_id") or part.category_id))
+        db.session.commit()
+    return redirect(url_for("library", lid=lid))
+
+
+@app.post("/libraries/<lid>/parts/<item_id>")
+def library_part_update(lid, item_id):
+    current = db.get_or_404(Library, lid)
+    if not library_access(current, True):
+        abort(403)
+    item = db.get_or_404(LibraryPart, item_id)
+    if item.library_id != lid:
+        abort(404)
+    item.note = request.form.get("note", "")
+    item.category_id = request.form.get("category_id") or None
+    db.session.commit()
+    return redirect(url_for("library", lid=lid))
+
+
+@app.post("/libraries/<lid>/share")
+def library_share(lid):
+    current = db.get_or_404(Library, lid)
+    if current.owner_id != g.user.id:
+        abort(403)
+    target = User.query.filter(db.func.lower(User.email) == request.form.get("email", "").strip().lower()).first()
+    if not target:
+        flash("User not found.", "warning")
+    elif target.id != g.user.id:
+        share = LibraryShare.query.filter_by(library_id=lid, user_id=target.id).first() or LibraryShare(library_id=lid, user_id=target.id)
+        share.role = request.form.get("role", "read")
+        db.session.add(share)
+        db.session.commit()
+        flash("Library shared.", "success")
+    return redirect(url_for("library", lid=lid))
 
 
 @app.get("/categories")

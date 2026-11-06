@@ -27,11 +27,11 @@ def to_int(text):
     return int(digits) if digits else None
 
 
-def mouser(cfg, query):
+def mouser(cfg, query, page=1):
     response = requests.post(
         "https://api.mouser.com/api/v1/search/keyword",
         params={"apiKey": cfg["api_key"]},
-        json={"SearchByKeywordRequest": {"keyword": query, "records": 20, "startingRecord": 0}},
+        json={"SearchByKeywordRequest": {"keyword": query, "records": 20, "startingRecord": (page - 1) * 20}},
         timeout=TIMEOUT,
     )
     response.raise_for_status()
@@ -55,7 +55,12 @@ def mouser(cfg, query):
             "image": part.get("ImagePath") or "",
             "category": part.get("Category", ""),
             "datasheets": [datasheet] if datasheet else [],
-            "specs": [],
+            "specs": [
+                {"name": a.get("AttributeName") or a.get("Name", ""),
+                 "value": a.get("AttributeValue") or a.get("Value", ""), "unit": ""}
+                for a in part.get("ProductAttributes") or []
+                if (a.get("AttributeName") or a.get("Name")) and (a.get("AttributeValue") or a.get("Value"))
+            ],
             "lifecycle": part.get("LifecycleStatus"),
             "offers": [{
                 "distributor": "Mouser",
@@ -69,7 +74,7 @@ def mouser(cfg, query):
     return results
 
 
-NEXAR_QUERY = """query($q:String!){supSearch(q:$q,limit:20){results{part{mpn name shortDescription
+NEXAR_QUERY = """query($q:String!,$limit:Int!){supSearch(q:$q,limit:$limit){results{part{mpn name shortDescription
 manufacturer{name} bestImage{url} bestDatasheet{url} category{name}
 specs{attribute{name} displayValue}
 sellers{company{name} offers{inventoryLevel moq orderMultiple clickUrl prices{quantity price currency}}}}}}}"""
@@ -95,10 +100,10 @@ def nexar_token(cfg):
     return body["access_token"]
 
 
-def nexar(cfg, query):
+def nexar(cfg, query, page=1):
     response = requests.post(
         "https://api.nexar.com/graphql",
-        json={"query": NEXAR_QUERY, "variables": {"q": query}},
+        json={"query": NEXAR_QUERY, "variables": {"q": query, "limit": 20}},
         headers={"Authorization": "Bearer " + nexar_token(cfg)},
         timeout=TIMEOUT,
     )

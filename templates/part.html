@@ -34,6 +34,7 @@
 <form class="d-flex gap-1" method="post" onsubmit="this.action='/projects/'+this.pid.value+'/add'"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="part_id" value="{{ p.id }}"><input type="hidden" name="next" value="{{ request.path }}">
 <select class="form-select" name="pid" required><option value="">Add to project…</option>{% for pr in projects_all %}<option value="{{ pr.id }}">{{ pr.name }}</option>{% endfor %}</select>
 <input class="form-control" style="width:70px" type="number" name="qty" value="1" min="1"><button class="btn btn-primary">Add</button></form></div>
+{% if libraries_all %}<form class="d-flex gap-1 mt-2" method="post" action="{{ url_for('library_add', lid=libraries_all[0].id) }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="part_id" value="{{ p.id }}"><select class="form-select" name="library_id" required onchange="this.form.action='/libraries/'+this.value+'/add'"><option value="">Add to library…</option>{% for library in libraries_all %}<option value="{{ library.id }}">{{ library.name }}</option>{% endfor %}</select><button class="btn btn-outline-primary">Add</button></form>{% endif %}</div>
 </div></div>
 
 <ul class="nav nav-tabs mb-3">
@@ -44,7 +45,7 @@
 <div class="tab-pane fade show active" id="tab-overview">
 {% if similar %}<h2 class="h6">In your library, same category</h2><div class="row row-cols-2 row-cols-md-4 g-3 mb-4">{% for s in similar %}{{ card(s) }}{% endfor %}</div>{% endif %}
 {% if names %}<div class="d-flex align-items-center gap-2 mb-2"><h2 class="h6 mb-0">Similar from distributors</h2><div id="extStatus"></div></div>
-<div id="ext" class="row row-cols-2 row-cols-md-4 g-3" data-q="{{ p.related_query() }}" data-names='{{ names|tojson }}' data-skip='{{ [p.key()]|tojson }}' data-limit="8"></div>
+<div id="ext" class="row row-cols-2 row-cols-md-4 g-3" data-q="{{ p.related_query() }}" data-names='{{ names|tojson }}' data-skip='{{ [p.key()]|tojson }}' data-limit="8"></div><button id="extNext" class="btn btn-outline-secondary mt-3" hidden>Load next distributor page</button>
 {% elif not similar %}<p class="text-secondary">Related parts appear here once the part has a category or a distributor provider is enabled.</p>{% endif %}
 </div>
 <div class="tab-pane fade" id="tab-specs">
