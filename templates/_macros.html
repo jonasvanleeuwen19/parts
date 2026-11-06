@@ -1,0 +1,14 @@
+{% macro card(p, project_id=None) %}
+<div class="col" data-key="{{ p.key() }}"><div class="card h-100">
+<a class="card-img-wrap" href="{{ url_for('part', pid=p.id) }}">{% if p.main_image() %}<img src="{{ p.main_image() }}" alt="" loading="lazy" referrerpolicy="no-referrer">{% else %}<i class="bi bi-cpu fs-1 text-secondary"></i>{% endif %}</a>
+<div class="card-body pb-2">
+<a class="fw-semibold text-decoration-none" href="{{ url_for('part', pid=p.id) }}">{{ p.name }}</a>
+{% if p.manufacturer %}<div class="small"><a class="text-secondary" href="{{ url_for('parts', mf=p.manufacturer) }}">{{ p.manufacturer }}</a></div>{% endif %}
+{% if p.category %}<a class="badge text-bg-secondary text-decoration-none" href="{{ url_for('parts', cat=p.category.id) }}">{{ p.category.name }}</a>{% endif %}
+{% for s in p.specs()[:2] %}<div class="small text-secondary text-truncate">{{ s.name }}: {{ s.value }} {{ s.unit }}</div>{% endfor %}
+</div>
+<div class="card-footer d-flex justify-content-between align-items-center small">
+<span>{% if p.has_datasheet() %}<i class="bi bi-file-earmark-pdf" title="Datasheet"></i> {% endif %}{{ p.price_label() or '' }}</span>
+{% if project_id %}<form method="post" action="{{ url_for('project_add', pid=project_id) }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="part_id" value="{{ p.id }}"><input type="hidden" name="next" value="{{ request.full_path }}"><button class="btn btn-sm btn-primary">Add</button></form>{% endif %}
+</div></div></div>
+{% endmacro %}

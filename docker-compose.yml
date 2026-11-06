@@ -1,0 +1,11 @@
+services:
+  components:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: ${TZ:-UTC}
+    ports:
+      - "${PORT:-8000}:8000"
+    volumes:
+      - ./data:/data

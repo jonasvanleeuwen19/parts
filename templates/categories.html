@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% macro nodes(items) %}
+{% for n in items %}
+{% set row %}<div class="d-flex align-items-center gap-2 py-1 cat-row" data-name="{{ n.name|lower }}"><a class="text-decoration-none" href="{{ url_for('parts', cat=n.id) }}">{{ n.name }}</a><span class="badge text-bg-secondary">{{ n.count }}</span>
+<div class="dropdown ms-auto"><button class="btn btn-sm btn-outline-secondary" data-bs-toggle="dropdown"><i class="bi bi-three-dots"></i></button><ul class="dropdown-menu dropdown-menu-end">
+<li><a class="dropdown-item" href="#" data-cat="add" data-id="{{ n.id }}" data-label="{{ n.name }}">Add subcategory</a></li>
+<li><a class="dropdown-item" href="#" data-cat="rename" data-id="{{ n.id }}" data-label="{{ n.name }}">Rename</a></li>
+<li><a class="dropdown-item" href="#" data-cat="move" data-id="{{ n.id }}" data-label="{{ n.name }}">Move</a></li>
+<li><a class="dropdown-item text-danger" href="#" data-cat="delete" data-id="{{ n.id }}" data-label="{{ n.name }}">Delete</a></li></ul></div></div>{% endset %}
+{% if n.children %}<details open><summary>{{ row }}</summary><div class="ms-4 border-start ps-3">{{ nodes(n.children) }}</div></details>{% else %}<div class="ms-4">{{ row }}</div>{% endif %}
+{% endfor %}
+{% endmacro %}
+{% block content %}
+<div class="d-flex flex-wrap gap-2 justify-content-between mb-3"><h1 class="h4 mb-0">Categories</h1>
+<div class="d-flex gap-2"><input class="form-control" id="catFilter" placeholder="Filter categories"><button class="btn btn-success text-nowrap" data-cat="add" data-id="" data-label=""><i class="bi bi-plus-lg"></i> New category</button></div></div>
+<div class="card"><div class="card-body" id="catTree">{{ nodes(tree) }}{% if not tree %}<span class="text-secondary">No categories yet.</span>{% endif %}</div></div>
+<div class="modal fade" id="catModal"><div class="modal-dialog"><form class="modal-content" method="post" action="{{ url_for('categories_post') }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" id="catAction"><input type="hidden" name="id" id="catId">
+<div class="modal-header"><h5 class="modal-title" id="catTitle"></h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+<div class="modal-body vstack gap-3"><div id="catNameWrap"><label class="form-label">Name</label><input class="form-control" name="name" id="catName"></div>
+<div id="catParentWrap"><label class="form-label" id="catParentLabel">Parent category</label><div class="cat-picker" id="catParent" data-name="parent_id" data-placeholder="Top level"></div></div>
+<p class="mb-0" id="catWarn" hidden>Parts and subcategories move up to the parent category.</p></div>
+<div class="modal-footer"><button class="btn btn-primary" id="catSubmit">Save</button></div></form></div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+const modal=bootstrap.Modal.getOrCreateInstance('#catModal');
+document.addEventListener('click',e=>{
+ const b=e.target.closest('[data-cat]');if(!b)return;e.preventDefault();
+ const a=b.dataset.cat,id=b.dataset.id,label=b.dataset.label,picker=$('#catParent');
+ $('#catAction').value=a;$('#catId').value=id;
+ $('#catTitle').textContent={add:id?'Add subcategory to '+label:'New category',rename:'Rename '+label,move:'Move '+label,delete:'Delete '+label+'?'}[a];
+ $('#catNameWrap').hidden=!(a==='add'||a==='rename');$('#catName').value=a==='rename'?label:'';
+ $('#catParentWrap').hidden=!(a==='add'||a==='move');$('#catWarn').hidden=a!=='delete';
+ $('#catParentLabel').textContent=a==='add'?'Parent category':'Move to';
+ picker.dataset.exclude=a==='move'?id:'';
+ picker.setValue(a==='add'?id:'',a==='add'?label:'');
+ $('#catSubmit').textContent=a==='delete'?'Delete':'Save';$('#catSubmit').className='btn '+(a==='delete'?'btn-danger':'btn-primary');
+ modal.show();setTimeout(()=>$('#catName').focus(),300);
+});
+$('#catFilter').addEventListener('input',e=>{const q=e.target.value.toLowerCase();$$('.cat-row').forEach(r=>{const row=r.closest('details')||r.parentElement;row.hidden=false;});
+ if(q)$$('.cat-row').forEach(r=>{if(!r.dataset.name.includes(q)){const wrap=r.closest('details')||r.parentElement;if(!wrap.querySelector('.cat-row[data-name*="'+q.replace(/["\\]/g,'')+'"]'))wrap.hidden=true}})});
+</script>
+{% endblock %}

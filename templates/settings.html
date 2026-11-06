@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="h4 mb-3">Settings</h1>
+<h2 class="h6">Distributor providers</h2>
+<div class="row g-3 mb-4">
+{% for name, m in meta.items() %}<div class="col-md-6"><div class="card"><div class="card-body"><h3 class="h6">{{ m.label }}</h3>
+<form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="provider"><input type="hidden" name="name" value="{{ name }}">
+<div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" name="enabled" {{ 'checked' if status[name].enabled }}><label class="form-check-label">Enabled</label></div>
+{% for f in m.fields %}<input class="form-control mb-2" type="password" name="{{ f }}" placeholder="{{ f }}{{ ' (set, leave blank to keep)' if status[name][f] }}" autocomplete="off">{% endfor %}
+<button class="btn btn-sm btn-primary">Save</button> <button type="button" class="btn btn-sm btn-outline-secondary" data-test="{{ name }}">Test connection</button><span class="small ms-2" id="r-{{ name }}"></span></form></div></div></div>{% endfor %}
+</div>
+<h2 class="h6">Library API</h2>
+<p class="text-secondary">{% if api_enabled %}Enabled. Send the <code>API_KEY</code> from your environment as <code>X-API-Key</code> or a Bearer token.<br>
+<code>GET /api/v1/parts?q=esp32</code> · <code>GET /api/v1/parts/&lt;id&gt;</code> · <code>GET /api/v1/categories</code>{% else %}Disabled. Set <code>API_KEY</code> in your environment to enable it.{% endif %}</p>
+<h2 class="h6">Users</h2>
+<table class="table"><tr><th>Name</th><th>Email</th><th>Role</th><th></th></tr>
+{% for u in users %}<tr><td>{{ u.name }}</td><td>{{ u.email }}</td><td>{{ 'Admin' if u.is_admin else 'User' }}</td><td>{% if u.id != user.id %}<form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="admin"><input type="hidden" name="id" value="{{ u.id }}"><button class="btn btn-sm btn-outline-secondary">Toggle admin</button></form>{% endif %}</td></tr>{% endfor %}</table>
+<a class="btn btn-outline-secondary" href="{{ url_for('export') }}"><i class="bi bi-download"></i> Download backup</a>
+{% endblock %}
+{% block scripts %}
+<script>
+$$('[data-test]').forEach(b=>b.onclick=async()=>{const out=$('#r-'+b.dataset.test);out.textContent='Testing…';
+ const d=await (await fetch('/settings/test/'+b.dataset.test,{method:'POST',headers:{'X-CSRF':CSRF}})).json();
+ out.textContent=d.message;out.className='small ms-2 text-'+(d.ok?'success':'danger');});
+</script>
+{% endblock %}

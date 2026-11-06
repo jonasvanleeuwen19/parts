@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% from "_macros.html" import card with context %}
+{% macro tree_nodes(nodes) %}
+{% for n in nodes %}
+{% set link %}<a class="text-decoration-none {{ 'fw-bold' if request.args.get('cat')==n.id else 'text-body' }}" href="{{ qs(cat=n.id, page=None) }}">{{ n.name }}</a><span class="text-secondary small">{{ n.count }}</span>{% endset %}
+{% if n.children %}<details {{ 'open' if n.id in open_ids }}><summary class="d-flex justify-content-between py-1">{{ link }}</summary><div class="ms-3 ps-2 border-start">{{ tree_nodes(n.children) }}</div></details>
+{% else %}<div class="d-flex justify-content-between py-1 ps-3">{{ link }}</div>{% endif %}
+{% endfor %}
+{% endmacro %}
+{% block content %}
+<div class="row g-4">
+<aside class="col-lg-3">
+<button class="btn btn-outline-secondary w-100 d-lg-none mb-3" data-bs-toggle="collapse" data-bs-target="#side">Categories and projects</button>
+<div class="collapse d-lg-block" id="side">
+<div class="d-flex justify-content-between mb-2"><h2 class="h6 mb-0">Categories</h2><a class="small" href="{{ url_for('categories') }}">Manage</a></div>
+<div class="mb-4"><a class="d-block py-1 text-decoration-none {{ 'fw-bold' if not request.args.get('cat') }}" href="{{ qs(cat=None, page=None) }}">All parts</a>{{ tree_nodes(tree) }}</div>
+<div class="d-flex justify-content-between mb-2"><h2 class="h6 mb-0">Recent projects</h2><a class="small" href="{{ url_for('projects') }}">All</a></div>
+{% for pr in recent_projects %}<a class="d-block py-1 text-decoration-none" href="{{ url_for('project', pid=pr.id) }}">{{ pr.name }}</a>{% else %}<span class="small text-secondary">No projects yet.</span>{% endfor %}
+</div>
+</aside>
+<section class="col-lg-9">
+{% if project_id %}<div class="alert alert-primary py-2">Adding to a project. <a href="{{ url_for('project', pid=project_id) }}">Back to project</a></div>{% endif %}
+<form class="row g-2 mb-3">
+{% for k in ('cat','mf','tag','project') %}{% if request.args.get(k) %}<input type="hidden" name="{{ k }}" value="{{ request.args.get(k) }}">{% endif %}{% endfor %}
+<input type="hidden" name="view" value="{{ view }}">
+<div class="col"><input class="form-control" name="q" value="{{ q }}" placeholder="Search your library and distributors" data-suggest="all" autocomplete="off"></div>
+<div class="col-auto"><select class="form-select" name="sort" onchange="this.form.submit()"><option value="">Recently updated</option><option value="name" {{ 'selected' if request.args.get('sort')=='name' }}>Name</option></select></div>
+<div class="col-auto btn-group"><a class="btn btn-outline-secondary {{ 'active' if view=='cards' }}" data-view="cards" href="{{ qs(view='cards') }}" title="Cards"><i class="bi bi-grid"></i></a>
+<a class="btn btn-outline-secondary {{ 'active' if view=='table' }}" data-view="table" href="{{ qs(view='table') }}" title="Table"><i class="bi bi-list-ul"></i></a></div>
+</form>
+<div class="d-flex flex-wrap gap-2 mb-3">
+{% if category %}<a class="badge text-bg-primary text-decoration-none" href="{{ qs(cat=None, page=None) }}">{{ category.path }} <i class="bi bi-x"></i></a>{% endif %}
+{% if request.args.get('mf') %}<a class="badge text-bg-primary text-decoration-none" href="{{ qs(mf=None, page=None) }}">{{ request.args.get('mf') }} <i class="bi bi-x"></i></a>{% endif %}
+{% if request.args.get('tag') %}<a class="badge text-bg-primary text-decoration-none" href="{{ qs(tag=None, page=None) }}">#{{ request.args.get('tag') }} <i class="bi bi-x"></i></a>{% endif %}
+</div>
+{% if view=='table' %}
+<div class="table-responsive"><table class="table table-hover align-middle"><thead><tr><th></th><th>Name</th><th>Manufacturer</th><th>MPN</th><th>Category</th><th>Price</th><th></th></tr></thead>
+{% for p in pagination.items %}<tr data-key="{{ p.key() }}"><td>{% if p.main_image() %}<img class="thumb-xs" src="{{ p.main_image() }}" alt="" referrerpolicy="no-referrer">{% endif %}</td>
+<td><a href="{{ url_for('part', pid=p.id) }}">{{ p.name }}</a></td>
+<td>{% if p.manufacturer %}<a class="text-secondary" href="{{ url_for('parts', mf=p.manufacturer) }}">{{ p.manufacturer }}</a>{% endif %}</td><td>{{ p.mpn or '' }}</td>
+<td>{% if p.category %}<a href="{{ url_for('parts', cat=p.category.id) }}">{{ p.category.name }}</a>{% endif %}</td><td>{{ p.price_label() or '' }}</td>
+<td>{% if p.has_datasheet() %}<i class="bi bi-file-earmark-pdf"></i>{% endif %}
+{% if project_id %}<form class="d-inline" method="post" action="{{ url_for('project_add', pid=project_id) }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="part_id" value="{{ p.id }}"><input type="hidden" name="next" value="{{ request.full_path }}"><button class="btn btn-sm btn-primary">Add</button></form>{% endif %}</td></tr>{% endfor %}</table></div>
+{% else %}
+<div class="row row-cols-2 row-cols-md-3 row-cols-xl-4 g-3">{% for p in pagination.items %}{{ card(p, project_id) }}{% endfor %}</div>
+{% endif %}
+{% if not pagination.items and not names %}<div class="text-center text-secondary py-5">No parts found. <a href="#" data-bs-toggle="modal" data-bs-target="#newPart">Create one</a>{% if q %} or enable a distributor provider in Settings to search externally{% endif %}.</div>{% endif %}
+{% if pagination.pages > 1 %}<nav class="mt-4"><ul class="pagination">
+<li class="page-item {{ 'disabled' if not pagination.has_prev }}"><a class="page-link" href="{{ qs(page=pagination.prev_num) }}">Previous</a></li>
+<li class="page-item disabled"><span class="page-link">{{ pagination.page }} / {{ pagination.pages }}</span></li>
+<li class="page-item {{ 'disabled' if not pagination.has_next }}"><a class="page-link" href="{{ qs(page=pagination.next_num) }}">Next</a></li></ul></nav>{% endif %}
+{% if names %}
+<div class="d-flex align-items-center gap-2 mt-4 mb-2"><h2 class="h6 mb-0">More from distributors</h2><div id="extStatus"></div></div>
+<div id="ext" class="row row-cols-2 row-cols-md-3 row-cols-xl-4 g-3" data-q="{{ q }}" data-names='{{ names|tojson }}' data-project="{{ project_id or '' }}"></div>
+{% endif %}
+</section></div>
+{% endblock %}
+{% block scripts %}
+<script>
+const saved=localStorage.getItem('view');
+if(!new URLSearchParams(location.search).has('view')&&saved&&saved!=='{{ view }}'){const u=new URL(location);u.searchParams.set('view',saved);location.replace(u)}
+$$('[data-view]').forEach(a=>a.addEventListener('click',()=>localStorage.setItem('view',a.dataset.view)));
+</script>
+{% endblock %}

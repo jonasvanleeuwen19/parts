@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% from "_macros.html" import card with context %}
+{% block title %}{{ p.name }} · Parts{% endblock %}
+{% block content %}
+<div class="row g-4 mb-3">
+<div class="col-lg-5">
+<div class="gallery-main mb-2">{% if p.main_image() %}<img id="mainImg" src="{{ p.main_image() }}" alt="" referrerpolicy="no-referrer">{% else %}<i class="bi bi-cpu text-secondary" style="font-size:5rem"></i>{% endif %}</div>
+<div class="d-flex gap-2 flex-wrap align-items-center">
+{% for f in p.images() %}<img class="gallery-thumb {{ 'active' if loop.first }}" data-gallery src="{{ url_for('file', fid=f.id) }}" alt="">{% endfor %}
+<form method="post" action="{{ url_for('part_upload', pid=p.id) }}" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="tab" value="">
+<label class="btn btn-outline-secondary" title="Add images"><i class="bi bi-plus-lg"></i> Add image<input type="file" name="files" accept="image/*" multiple hidden data-autosubmit></label></form>
+</div></div>
+<div class="col-lg-7">
+<div class="d-flex justify-content-between gap-2">
+<h1 class="h3">{{ p.name }}</h1>
+<div class="text-nowrap"><button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#editPart"><i class="bi bi-pencil"></i> Edit</button>
+<form class="d-inline" method="post" action="{{ url_for('part_delete', pid=p.id) }}" data-confirm="Delete this part and its files?"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-sm btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button></form></div></div>
+<div class="mb-2">{% if p.manufacturer %}<a href="{{ url_for('parts', mf=p.manufacturer) }}">{{ p.manufacturer }}</a>{% endif %}
+{% if p.mpn %}<span class="text-secondary ms-2">{{ p.mpn }}</span> <button class="btn btn-sm btn-link py-0" data-copy="{{ p.mpn }}" title="Copy MPN"><i class="bi bi-clipboard"></i></button>{% endif %}</div>
+<div class="mb-2 d-flex flex-wrap gap-1 align-items-center">
+{% for c in p.chain() %}<a class="text-decoration-none" href="{{ url_for('parts', cat=c.id) }}">{{ c.name }}</a>{% if not loop.last %}<span class="text-secondary">/</span>{% endif %}{% else %}<a href="#" data-bs-toggle="modal" data-bs-target="#editPart" class="small">Add category</a>{% endfor %}
+{% for t in p.tag_list() %}<a class="badge text-bg-secondary text-decoration-none ms-1" href="{{ url_for('parts', tag=t) }}">#{{ t }}</a>{% endfor %}</div>
+<p>{% if p.description %}{{ p.description }}{% else %}<a href="#" data-bs-toggle="modal" data-bs-target="#editPart" class="text-secondary">Add a description</a>{% endif %}</p>
+{% if p.specs() %}<div class="row g-2 mb-3">{% for s in p.specs()[:6] %}<div class="col-6 col-md-4"><div class="tile"><div class="small text-secondary text-truncate">{{ s.name }}</div>{{ s.value }} {{ s.unit }}</div></div>{% endfor %}</div>
+<a href="#" class="small" data-go-tab="specs">All specifications ({{ p.specs()|length }})</a>{% endif %}
+<div class="card mt-3"><div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-2">
+<div>{% if p.price_label() %}<div class="fs-5">from {{ p.price_label() }}</div><div class="small text-secondary">Cached snapshot, {{ p.last_fetched()[:16]|replace('T',' ') }} UTC · <a href="#" data-go-tab="offers">{{ p.sources()|length }} source(s)</a></div>
+{% else %}<div class="text-secondary">No price information yet.</div>{% endif %}</div>
+<form method="post" action="{{ url_for('part_refresh', pid=p.id) }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-repeat"></i> {{ 'Refresh prices' if p.sources() else 'Find prices' }}</button></form></div></div>
+<div class="d-flex flex-wrap gap-2 mt-3">
+{% if p.pdfs() %}<a class="btn btn-outline-primary" href="#" data-pdf="{{ url_for('file', fid=p.pdfs()[0].id) }}" data-title="{{ p.pdfs()[0].name }}"><i class="bi bi-file-earmark-pdf"></i> View datasheet</a>
+{% elif p.ext_files() %}<a class="btn btn-outline-primary" href="{{ p.ext_files()[0].url }}" target="_blank" rel="noopener noreferrer"><i class="bi bi-file-earmark-pdf"></i> Datasheet</a>
+{% else %}<a class="btn btn-outline-secondary" href="#" data-go-tab="files"><i class="bi bi-plus-lg"></i> Add datasheet</a>{% endif %}
+<form class="d-flex gap-1" method="post" onsubmit="this.action='/projects/'+this.pid.value+'/add'"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="part_id" value="{{ p.id }}"><input type="hidden" name="next" value="{{ request.path }}">
+<select class="form-select" name="pid" required><option value="">Add to project…</option>{% for pr in projects_all %}<option value="{{ pr.id }}">{{ pr.name }}</option>{% endfor %}</select>
+<input class="form-control" style="width:70px" type="number" name="qty" value="1" min="1"><button class="btn btn-primary">Add</button></form></div>
+</div></div>
+
+<ul class="nav nav-tabs mb-3">
+{% for id, label, n in [('overview','Related',None),('specs','Specifications',p.specs()|length),('files','Datasheets & files',p.files|length+p.ext_files()|length),('offers','Offers',p.sources()|length),('links','Links',p.links()|length),('notes','Notes',None)] %}
+<li class="nav-item"><button class="nav-link {{ 'active' if loop.first }}" data-bs-toggle="tab" data-bs-target="#tab-{{ id }}">{{ label }}{% if n %} <span class="badge text-bg-secondary">{{ n }}</span>{% endif %}</button></li>{% endfor %}
+</ul>
+<div class="tab-content">
+<div class="tab-pane fade show active" id="tab-overview">
+{% if similar %}<h2 class="h6">In your library, same category</h2><div class="row row-cols-2 row-cols-md-4 g-3 mb-4">{% for s in similar %}{{ card(s) }}{% endfor %}</div>{% endif %}
+{% if names %}<div class="d-flex align-items-center gap-2 mb-2"><h2 class="h6 mb-0">Similar from distributors</h2><div id="extStatus"></div></div>
+<div id="ext" class="row row-cols-2 row-cols-md-4 g-3" data-q="{{ p.related_query() }}" data-names='{{ names|tojson }}' data-skip='{{ [p.key()]|tojson }}' data-limit="8"></div>
+{% elif not similar %}<p class="text-secondary">Related parts appear here once the part has a category or a distributor provider is enabled.</p>{% endif %}
+</div>
+<div class="tab-pane fade" id="tab-specs">
+<form method="post" action="{{ url_for('part_specs', pid=p.id) }}"><input type="hidden" name="csrf" value="{{ csrf }}">
+<table class="table table-sm align-middle"><thead><tr><th>Name</th><th>Value</th><th style="width:20%">Unit</th><th></th></tr></thead><tbody id="specBody">
+{% for s in p.specs() %}<tr><td><input class="form-control form-control-sm" name="name" value="{{ s.name }}"></td><td><input class="form-control form-control-sm" name="value" value="{{ s.value }}"></td><td><input class="form-control form-control-sm" name="unit" value="{{ s.unit }}"></td><td><button type="button" class="btn btn-sm btn-link text-danger del-row"><i class="bi bi-x-lg"></i></button></td></tr>{% endfor %}
+</tbody></table>
+<template id="specRow"><tr><td><input class="form-control form-control-sm" name="name"></td><td><input class="form-control form-control-sm" name="value"></td><td><input class="form-control form-control-sm" name="unit"></td><td><button type="button" class="btn btn-sm btn-link text-danger del-row"><i class="bi bi-x-lg"></i></button></td></tr></template>
+<button type="button" class="btn btn-sm btn-outline-secondary" id="addSpec"><i class="bi bi-plus-lg"></i> Add row</button> <button class="btn btn-sm btn-primary">Save specifications</button></form></div>
+<div class="tab-pane fade" id="tab-files">
+<form method="post" action="{{ url_for('part_upload', pid=p.id) }}" enctype="multipart/form-data" class="mb-4"><input type="hidden" name="csrf" value="{{ csrf }}">
+<label class="dropzone d-block text-center p-4 w-100"><i class="bi bi-cloud-upload fs-3"></i><div>Drop PDFs or images here, or click to upload</div><input type="file" name="files" multiple accept="image/*,application/pdf" hidden data-autosubmit></label></form>
+<h2 class="h6">Datasheets and documents</h2>
+<div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3 mb-4">
+{% for f in p.pdfs() %}<div class="col"><div class="card h-100"><div class="card-body d-flex gap-3"><i class="bi bi-file-earmark-pdf text-danger file-icon"></i>
+<div class="min-w-0"><div class="fw-semibold text-break">{{ f.name }}</div><div class="small text-secondary">PDF · {{ f.size|filesize }} · {{ f.created.strftime('%Y-%m-%d') }}</div></div></div>
+<div class="card-footer d-flex gap-1"><a class="btn btn-sm btn-primary" href="#" data-pdf="{{ url_for('file', fid=f.id) }}" data-title="{{ f.name }}"><i class="bi bi-eye"></i> View</a>
+<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('file', fid=f.id, download=1) }}"><i class="bi bi-download"></i></a>
+<form class="ms-auto" method="post" action="{{ url_for('file_delete', fid=f.id) }}" data-confirm="Delete this file?"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button></form></div></div></div>{% endfor %}
+{% for e in p.ext_files() %}<div class="col"><div class="card h-100"><div class="card-body d-flex gap-3"><i class="bi bi-link-45deg text-info file-icon"></i>
+<div><div class="fw-semibold">{{ e.title }}</div><div class="small text-secondary text-break">{{ e.url|domain }}</div></div></div>
+<div class="card-footer d-flex gap-1"><a class="btn btn-sm btn-primary" href="{{ e.url }}" target="_blank" rel="noopener noreferrer"><i class="bi bi-box-arrow-up-right"></i> Open</a>
+<form class="ms-auto" method="post" action="{{ url_for('part_extfile', pid=p.id) }}" data-confirm="Remove this link?"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="delete"><input type="hidden" name="index" value="{{ loop.index0 }}"><button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button></form></div></div></div>{% endfor %}
+{% if not p.pdfs() and not p.ext_files() %}<p class="text-secondary">No datasheets yet.</p>{% endif %}</div>
+<form class="row g-2 mb-4" method="post" action="{{ url_for('part_extfile', pid=p.id) }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="add">
+<div class="col-md-3"><input class="form-control form-control-sm" name="title" placeholder="Title (optional)"></div><div class="col"><input class="form-control form-control-sm" name="url" type="url" placeholder="Add a datasheet by URL" required></div><div class="col-auto"><button class="btn btn-sm btn-outline-primary">Add link</button></div></form>
+{% if p.images() %}<h2 class="h6">Images</h2><div class="row row-cols-2 row-cols-md-4 row-cols-xl-6 g-3">
+{% for f in p.images() %}<div class="col"><div class="card h-100"><a href="{{ url_for('file', fid=f.id) }}" target="_blank"><div class="card-img-wrap" style="height:110px"><img src="{{ url_for('file', fid=f.id) }}" alt=""></div></a>
+<div class="card-footer d-flex justify-content-between small"><span class="text-truncate">{{ f.name }}</span><form method="post" action="{{ url_for('file_delete', fid=f.id) }}" data-confirm="Delete this image?"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-trash"></i></button></form></div></div></div>{% endfor %}</div>{% endif %}
+</div>
+<div class="tab-pane fade" id="tab-offers">
+<form class="mb-3" method="post" action="{{ url_for('part_refresh', pid=p.id) }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-sm btn-outline-primary"><i class="bi bi-arrow-repeat"></i> Fetch live prices</button></form>
+{% for s in p.sources() %}<h2 class="h6">{{ s.provider }} <span class="badge text-bg-warning">Cached snapshot · {{ s.fetched[:16]|replace('T',' ') }} UTC</span></h2>
+<div class="table-responsive mb-3"><table class="table table-sm"><thead><tr><th>Distributor</th><th>Price breaks</th><th>MOQ</th><th>Stock</th><th></th></tr></thead>
+{% for o in s.offers %}<tr><td>{{ o.distributor }}</td><td>{% for b in o.breaks %}{{ b.qty }}+: {{ b.price }} {{ b.currency }}{% if not loop.last %}<br>{% endif %}{% else %}<span class="text-secondary">No price</span>{% endfor %}</td>
+<td>{{ o.moq if o.moq is not none else '' }}</td><td>{{ o.stock if o.stock is not none else 'unknown' }}</td><td>{% if o.url %}<a href="{{ o.url }}" target="_blank" rel="noopener noreferrer">Open</a>{% endif %}</td></tr>{% endfor %}</table></div>
+{% else %}<p class="text-secondary">No offers yet.</p>{% endfor %}</div>
+<div class="tab-pane fade" id="tab-links">
+<form class="row g-2 mb-3" method="post" action="{{ url_for('part_links', pid=p.id) }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="add">
+<div class="col-md-3"><input class="form-control form-control-sm" name="title" placeholder="Title"></div><div class="col-md-4"><input class="form-control form-control-sm" type="url" name="url" placeholder="https://" required></div>
+<div class="col-md"><input class="form-control form-control-sm" name="description" placeholder="Description (optional)"></div><div class="col-auto"><button class="btn btn-sm btn-primary">Add link</button></div></form>
+<div class="list-group">{% for l in p.links() %}<div class="list-group-item d-flex justify-content-between align-items-center"><div><a href="{{ l.url }}" target="_blank" rel="noopener noreferrer">{{ l.title or l.url|domain }}</a> <span class="small text-secondary">{{ l.url|domain }}</span><div class="small text-secondary">{{ l.description }}</div></div>
+<form method="post" action="{{ url_for('part_links', pid=p.id) }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="delete"><input type="hidden" name="index" value="{{ loop.index0 }}"><button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button></form></div>{% else %}<div class="text-secondary">No links yet.</div>{% endfor %}</div></div>
+<div class="tab-pane fade" id="tab-notes"><form method="post" action="{{ url_for('part_note', pid=p.id) }}"><input type="hidden" name="csrf" value="{{ csrf }}">
+<textarea class="form-control mb-2" name="text" rows="8" placeholder="Your private notes">{{ note }}</textarea><button class="btn btn-primary">Save note</button></form></div>
+</div>
+<div class="text-secondary small mt-4">Added {{ p.created.strftime('%Y-%m-%d') }} · Updated {{ p.updated.strftime('%Y-%m-%d') }}</div>
+
+<div class="modal fade" id="editPart"><div class="modal-dialog modal-lg"><form class="modal-content" method="post" action="{{ url_for('part_details', pid=p.id) }}"><input type="hidden" name="csrf" value="{{ csrf }}">
+<div class="modal-header"><h5 class="modal-title">Edit part</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+<div class="modal-body row g-3">
+<div class="col-12"><label class="form-label">Name</label><input class="form-control" name="name" value="{{ p.name }}" required></div>
+<div class="col-md-6"><label class="form-label">Manufacturer</label><input class="form-control" name="manufacturer" value="{{ p.manufacturer or '' }}"></div>
+<div class="col-md-6"><label class="form-label">Manufacturer part number</label><input class="form-control" name="mpn" value="{{ p.mpn or '' }}"></div>
+<div class="col-12"><label class="form-label">Description</label><textarea class="form-control" name="description" rows="2">{{ p.description or '' }}</textarea></div>
+<div class="col-md-6"><label class="form-label">Category</label><div class="cat-picker" data-new data-value="{{ p.category_id or '' }}" data-label="{{ p.category.path if p.category else '' }}"></div></div>
+<div class="col-md-6"><label class="form-label">Tags (comma separated)</label><input class="form-control" name="tags" value="{{ p.tags or '' }}"></div>
+<div class="col-12"><label class="form-label">External image URL</label><input class="form-control" name="image_url" value="{{ p.image_url or '' }}"></div></div>
+<div class="modal-footer"><button class="btn btn-primary">Save</button></div></form></div></div>
+{% endblock %}

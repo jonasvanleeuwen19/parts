@@ -1,0 +1,21 @@
+services:
+  components-dev:
+    build: .
+    environment:
+      DEV_AUTOLOGIN: "1"
+      SECRET_KEY: dev-only-secret
+      PUBLIC_URL: http://localhost:${PORT:-8000}
+      MOUSER_API_KEY: ${MOUSER_API_KEY:-}
+      NEXAR_CLIENT_ID: ${NEXAR_CLIENT_ID:-}
+      NEXAR_CLIENT_SECRET: ${NEXAR_CLIENT_SECRET:-}
+      CACHE_TTL_SECONDS: "60"
+      API_KEY: dev-api-key
+    command: gunicorn -b 0.0.0.0:8000 -w 1 --threads 4 --reload app:app
+    ports:
+      - "127.0.0.1:${PORT:-8000}:8000"
+    volumes:
+      - ./data-dev:/data
+      - ./app.py:/app/app.py:ro
+      - ./providers.py:/app/providers.py:ro
+      - ./templates:/app/templates:ro
+      - ./static:/app/static:ro

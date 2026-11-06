@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between mb-3"><h1 class="h4">Projects</h1><button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#newProject"><i class="bi bi-plus-lg"></i> New project</button></div>
+<div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-3">
+{% for pr in rows %}{% set cost, missing = pr.cost() %}<div class="col"><a class="card h-100 text-decoration-none" href="{{ url_for('project', pid=pr.id) }}"><div class="card-body"><div class="fw-semibold">{{ pr.name }}</div><div class="small text-secondary">{{ pr.description or '' }}</div></div>
+<div class="card-footer small text-secondary">{{ pr.items|length }} parts{% for c, t in cost.items() %} · {{ '%.2f'|format(t) }} {{ c }}{% endfor %}</div></a></div>
+{% else %}<p class="text-secondary">No projects yet.</p>{% endfor %}</div>
+<div class="modal fade" id="newProject"><div class="modal-dialog"><form class="modal-content" method="post" action="{{ url_for('project_new') }}"><input type="hidden" name="csrf" value="{{ csrf }}">
+<div class="modal-header"><h5 class="modal-title">New project</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+<div class="modal-body vstack gap-3"><input class="form-control" name="name" placeholder="Name" required><textarea class="form-control" name="description" rows="2" placeholder="Description (optional)"></textarea></div>
+<div class="modal-footer"><button class="btn btn-primary">Create</button></div></form></div></div>
+{% endblock %}

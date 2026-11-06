@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="mx-auto" style="max-width:360px">
+<h1 class="h4 mb-3">Log in to Parts</h1>
+<form method="post"><input type="hidden" name="csrf" value="{{ csrf }}">
+<input class="form-control mb-2" name="username" placeholder="Username" autofocus required>
+<input class="form-control mb-3" type="password" name="password" placeholder="Password" required>
+<button class="btn btn-primary w-100">Log in</button></form></div>
+{% endblock %}
