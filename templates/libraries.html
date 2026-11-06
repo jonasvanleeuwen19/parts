@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between mb-3"><h1 class="h4">Libraries</h1><button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#newLibrary"><i class="bi bi-plus-lg"></i> New library</button></div>
+<div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-3">
+{% for library in rows %}<div class="col"><a class="card h-100 text-decoration-none" href="{{ url_for('library', lid=library.id) }}"><div class="card-body"><div class="fw-semibold">{{ library.name }}</div><div class="small text-secondary">{{ library.description or '' }}</div><span class="badge text-bg-secondary">{{ library.visibility }}</span></div><div class="card-footer small text-secondary">{{ library.items|length }} parts</div></a></div>
+{% else %}<p class="text-secondary">No libraries yet.</p>{% endfor %}</div>
+<div class="modal fade" id="newLibrary"><div class="modal-dialog"><form class="modal-content" method="post" action="{{ url_for('library_new') }}"><input type="hidden" name="csrf" value="{{ csrf }}"><div class="modal-header"><h5 class="modal-title">New library</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body vstack gap-3"><input class="form-control" name="name" placeholder="Name" required><textarea class="form-control" name="description" rows="2" placeholder="Description (optional)"></textarea><select class="form-select" name="visibility"><option value="private">Private</option><option value="public">Public share link</option></select></div><div class="modal-footer"><button class="btn btn-primary">Create</button></div></form></div></div>
+{% endblock %}

@@ -19,6 +19,7 @@
 <ul class="navbar-nav">
 <li class="nav-item"><a class="nav-link {{ 'active' if request.endpoint in ('parts','part') }}" href="{{ url_for('parts') }}">Parts</a></li>
 <li class="nav-item"><a class="nav-link {{ 'active' if request.endpoint in ('projects','project') }}" href="{{ url_for('projects') }}">Projects</a></li>
+<li class="nav-item"><a class="nav-link {{ 'active' if request.endpoint in ('libraries','library') }}" href="{{ url_for('libraries') }}">Libraries</a></li>
 <li class="nav-item"><a class="nav-link {{ 'active' if request.endpoint=='categories' }}" href="{{ url_for('categories') }}">Categories</a></li>
 </ul>
 <form class="flex-grow-1 mx-lg-3" action="{{ url_for('parts') }}"><input class="form-control" name="q" value="{{ request.args.get('q','') if request.endpoint=='parts' else '' }}" placeholder="Search parts, categories and distributors" data-suggest="all" autocomplete="off"></form>

@@ -51,7 +51,7 @@
 <li class="page-item {{ 'disabled' if not pagination.has_next }}"><a class="page-link" href="{{ qs(page=pagination.next_num) }}">Next</a></li></ul></nav>{% endif %}
 {% if names %}
 <div class="d-flex align-items-center gap-2 mt-4 mb-2"><h2 class="h6 mb-0">More from distributors</h2><div id="extStatus"></div></div>
-<div id="ext" class="row row-cols-2 row-cols-md-3 row-cols-xl-4 g-3" data-q="{{ q }}" data-names='{{ names|tojson }}' data-project="{{ project_id or '' }}"></div>
+<div id="ext" class="row row-cols-2 row-cols-md-3 row-cols-xl-4 g-3" data-q="{{ q }}" data-names='{{ names|tojson }}' data-project="{{ project_id or '' }}"></div><button id="extNext" class="btn btn-outline-secondary mt-3" hidden>Load next distributor page</button>
 {% endif %}
 </section></div>
 {% endblock %}
